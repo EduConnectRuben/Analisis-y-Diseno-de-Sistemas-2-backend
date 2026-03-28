@@ -1,22 +1,105 @@
-@app.post("/login")
-async def login(user: Usuario):
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import psycopg2
+from passlib.context import CryptContext
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# Configuración de CORS para que Netlify pueda entrar
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# URL DE TU BASE DE DATOS (PD8-DB)
+DATABASE_URL = "postgresql://pd8_db_user:9LmN3qxtlJC969WX8yeUq7BRmkgr68sV@dpg-d73srcua2pns73acu8qg-a.oregon-postgres.render.com/pd8_db"
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Modelos
+class Usuario(BaseModel):
+    email: str
+    password: str
+
+class Denuncia(BaseModel):
+    nombre: str
+    ci: str
+    descripcion: str
+
+class Citacion(BaseModel):
+    denuncia_id: int
+    fecha: str
+    fiscal: str
+
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
+
+@app.on_event("startup")
+def startup():
+    conn = get_conn()
+    cursor = conn.cursor()
+    # Crear tablas necesarias
+    cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha_reg TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, fecha_cita TEXT, fiscal_nombre TEXT);")
+    conn.commit()
+    conn.close()
+
+@app.get("/")
+def home():
+    return {"mensaje": "SISTEMA PD8 ONLINE"}
+
+@app.post("/registro")
+async def registro(user: Usuario):
     try:
         conn = get_conn()
         cursor = conn.cursor()
-        # Limpiamos el correo de espacios y lo pasamos a minúsculas
-        email_buscado = user.email.strip().lower()
-        
-        cursor.execute("SELECT password FROM usuarios WHERE email=%s", (email_buscado,))
-        res = cursor.fetchone()
+        hashed = pwd_context.hash(user.password)
+        cursor.execute("INSERT INTO usuarios (email, password) VALUES (%s, %s)", (user.email.lower().strip(), hashed))
+        conn.commit()
         conn.close()
+        return {"mensaje": "ok"}
+    except:
+        raise HTTPException(status_code=400, detail="Usuario ya existe")
 
-        if not res:
-            raise HTTPException(status_code=400, detail="El usuario no existe en la base de datos")
+@app.post("/login")
+async def login(user: Usuario):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT password FROM usuarios WHERE email=%s", (user.email.lower().strip(),))
+    res = cursor.fetchone()
+    conn.close()
+    if res and pwd_context.verify(user.password, res[0]):
+        return {"mensaje": "ok"}
+    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
 
-        if pwd_context.verify(user.password, res[0]):
-            return {"mensaje": "ok"}
-        else:
-            raise HTTPException(status_code=400, detail="La contraseña es incorrecta")
-    except Exception as e:
-        # Esto nos dirá el error real en el alert
-        raise HTTPException(status_code=400, detail=str(e))
+@app.post("/denuncias")
+async def crear_denuncia(d: Denuncia):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO denuncias (nombre, ci, descripcion) VALUES (%s, %s, %s)", (d.nombre, d.ci, d.descripcion))
+    conn.commit()
+    conn.close()
+    return {"mensaje": "ok"}
+
+@app.get("/denuncias")
+async def listar_denuncias():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nombre, ci, descripcion FROM denuncias ORDER BY id DESC")
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+@app.post("/citaciones")
+async def crear_citacion(c: Citacion):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO citaciones (denuncia_id, fecha_cita, fiscal_nombre) VALUES (%s, %s, %s)", (c.denuncia_id, c.fecha, c.fiscal))
+    conn.commit()
+    conn.close()
+    return {"mensaje": "ok"}
