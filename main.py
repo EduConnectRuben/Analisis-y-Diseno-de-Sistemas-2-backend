@@ -3,10 +3,11 @@ from pydantic import BaseModel
 import psycopg2
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
 
 app = FastAPI()
 
+# ⚠️ TRATAMIENTO DE CHOQUE PARA CORS ⚠️
+# Esto le dice al servidor que acepte TODO de CUALQUIER LUGAR
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,7 +19,6 @@ app.add_middleware(
 DATABASE_URL = "postgresql://pd8_db_user:9LmN3qxtlJC969WX8yeUq7BRmkgr68sV@dpg-d73srcua2pns73acu8qg-a.oregon-postgres.render.com/pd8_db"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# --- MODELOS ---
 class Usuario(BaseModel):
     email: str
     password: str
@@ -40,19 +40,17 @@ def get_conn():
 def startup():
     conn = get_conn()
     cursor = conn.cursor()
-    # Tabla Usuarios
     cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT);")
-    # Tabla Denuncias
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha_reg TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
-    # Tabla Citaciones
     cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, fecha_cita TEXT, fiscal_nombre TEXT);")
     conn.commit()
     conn.close()
 
+# RUTA DE PRUEBA PARA NAVEGADOR
 @app.get("/")
-def root(): return {"mensaje": "SISTEMA PD-8 ACTIVO"}
+def root():
+    return {"mensaje": "SISTEMA PD-8 FUNCIONANDO"}
 
-# --- RUTAS AUTENTICACIÓN ---
 @app.post("/registro")
 async def registro(user: Usuario):
     try:
@@ -63,7 +61,8 @@ async def registro(user: Usuario):
         conn.commit()
         conn.close()
         return {"mensaje": "ok"}
-    except: raise HTTPException(status_code=400, detail="Usuario ya existe")
+    except:
+        raise HTTPException(status_code=400, detail="Error")
 
 @app.post("/login")
 async def login(user: Usuario):
@@ -72,10 +71,11 @@ async def login(user: Usuario):
     cursor.execute("SELECT password FROM usuarios WHERE email=%s", (user.email.lower().strip(),))
     res = cursor.fetchone()
     conn.close()
-    if res and pwd_context.verify(user.password, res[0]): return {"mensaje": "ok"}
-    raise HTTPException(status_code=400, detail="Error de credenciales")
+    if res and pwd_context.verify(user.password, res[0]):
+        return {"mensaje": "ok"}
+    raise HTTPException(status_code=400, detail="Error")
 
-# --- RUTAS DENUNCIAS (SARGENTO) ---
+# (Aquí siguen las rutas de denuncias y citaciones igual que antes...)
 @app.post("/denuncias")
 async def crear_denuncia(d: Denuncia):
     conn = get_conn()
@@ -83,7 +83,7 @@ async def crear_denuncia(d: Denuncia):
     cursor.execute("INSERT INTO denuncias (nombre, ci, descripcion) VALUES (%s, %s, %s)", (d.nombre, d.ci, d.descripcion))
     conn.commit()
     conn.close()
-    return {"mensaje": "Denuncia registrada"}
+    return {"mensaje": "ok"}
 
 @app.get("/denuncias")
 async def listar_denuncias():
@@ -94,7 +94,6 @@ async def listar_denuncias():
     conn.close()
     return res
 
-# --- RUTAS CITACIONES (FISCAL) ---
 @app.post("/citaciones")
 async def crear_citacion(c: Citacion):
     conn = get_conn()
@@ -102,4 +101,4 @@ async def crear_citacion(c: Citacion):
     cursor.execute("INSERT INTO citaciones (denuncia_id, fecha_cita, fiscal_nombre) VALUES (%s, %s, %s)", (c.denuncia_id, c.fecha, c.fiscal))
     conn.commit()
     conn.close()
-    return {"mensaje": "Citación emitida"}
+    return {"mensaje": "ok"}
