@@ -21,10 +21,6 @@ class Usuario(BaseModel):
     email: str
     password: str
 
-class RolUpdate(BaseModel):
-    user_id: int
-    nuevo_rol: str
-
 class Denuncia(BaseModel):
     nombre: str
     ci: str
@@ -33,7 +29,7 @@ class Denuncia(BaseModel):
 class Citacion(BaseModel):
     denuncia_id: int
     nivel: str
-    fecha_cita: str
+    fecha: str
     fiscal: str
 
 def get_conn():
@@ -43,12 +39,13 @@ def get_conn():
 def startup():
     conn = get_conn()
     cursor = conn.cursor()
+    # Tablas Pro
     cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, rol TEXT DEFAULT 'pendiente');")
     cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha_cita TEXT, fiscal TEXT);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha TEXT, fiscal TEXT);")
     
-    # CUENTAS MAESTRAS (Clave: 12345)
+    # Cuentas Maestras (Pass: 12345)
     cuentas = [("admin@gmail.com", "admin"), ("policia@gmail.com", "policia"), ("fiscal@gmail.com", "fiscal")]
     for em, rl in cuentas:
         cursor.execute("SELECT id FROM usuarios WHERE email=%s", (em,))
@@ -57,9 +54,6 @@ def startup():
             cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", (em, h, rl))
     conn.commit()
     conn.close()
-
-@app.get("/")
-def home(): return {"mensaje": "SISTEMA PD-8 PROFESIONAL"}
 
 @app.post("/login")
 async def login(u: Usuario):
@@ -70,7 +64,7 @@ async def login(u: Usuario):
     conn.close()
     if res and pwd_context.verify(u.password, res[0]):
         return {"rol": res[1], "email": res[2]}
-    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
+    raise HTTPException(status_code=400)
 
 @app.post("/registro")
 async def registro(u: Usuario):
@@ -88,16 +82,17 @@ async def registro(u: Usuario):
 async def admin_list():
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email, rol FROM usuarios WHERE rol != 'admin' ORDER BY id DESC")
+    # LISTA A TODOS EXCEPTO AL ADMIN ACTUAL PARA ASIGNARLES CARGO
+    cursor.execute("SELECT id, email, rol FROM usuarios WHERE email != 'admin@gmail.com' ORDER BY id DESC")
     res = cursor.fetchall()
     conn.close()
     return res
 
 @app.post("/admin/asignar")
-async def asignar(data: RolUpdate):
+async def asignar(user_id: int, rol: str):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("UPDATE usuarios SET rol=%s WHERE id=%s", (data.nuevo_rol, data.user_id))
+    cursor.execute("UPDATE usuarios SET rol=%s WHERE id=%s", (rol, user_id))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -119,12 +114,3 @@ async def listar_denuncias():
     res = cursor.fetchall()
     conn.close()
     return res
-
-@app.post("/citaciones")
-async def guardar_citacion(c: Citacion):
-    conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO citaciones (denuncia_id, nivel, fecha_cita, fiscal) VALUES (%s, %s, %s, %s)", (c.denuncia_id, c.nivel, c.fecha_cita, c.fiscal))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
