@@ -52,6 +52,10 @@ def startup():
         if not cursor.fetchone():
             h = pwd_context.hash("12345")
             cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", (em, h, rl))
+        else:
+            # Fuerza el rol correcto si ya existían pero perdieron su rol
+            cursor.execute("UPDATE usuarios SET rol=%s WHERE email=%s", (rl, em))
+            
     conn.commit()
     conn.close()
 
