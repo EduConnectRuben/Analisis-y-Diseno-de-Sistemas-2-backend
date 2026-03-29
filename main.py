@@ -48,7 +48,7 @@ def startup():
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
     cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha_cita TEXT, fiscal TEXT);")
     
-    # CREAR CUENTAS MAESTRAS
+    # CUENTAS MAESTRAS (Clave: 12345)
     cuentas = [("admin@gmail.com", "admin"), ("policia@gmail.com", "policia"), ("fiscal@gmail.com", "fiscal")]
     for em, rl in cuentas:
         cursor.execute("SELECT id FROM usuarios WHERE email=%s", (em,))
@@ -59,7 +59,7 @@ def startup():
     conn.close()
 
 @app.get("/")
-def home(): return {"mensaje": "SISTEMA PD-8 PRO"}
+def home(): return {"mensaje": "SISTEMA PD-8 PROFESIONAL"}
 
 @app.post("/login")
 async def login(u: Usuario):
@@ -70,7 +70,7 @@ async def login(u: Usuario):
     conn.close()
     if res and pwd_context.verify(u.password, res[0]):
         return {"rol": res[1], "email": res[2]}
-    raise HTTPException(status_code=400, detail="Error")
+    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
 
 @app.post("/registro")
 async def registro(u: Usuario):
