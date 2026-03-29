@@ -50,20 +50,17 @@ async def registro(user: Usuario):
     try:
         conn = get_conn()
         cursor = conn.cursor()
-        
-        # TRUCO: Si es el primer usuario, hacerlo ADMIN automáticamente
         cursor.execute("SELECT COUNT(*) FROM usuarios")
         count = cursor.fetchone()[0]
         rol_inicial = "admin" if count == 0 else "pendiente"
-        
         hashed = pwd_context.hash(user.password)
         cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", 
                        (user.email.lower().strip(), hashed, rol_inicial))
         conn.commit()
         conn.close()
-        return {"mensaje": f"Usuario registrado como {rol_inicial}"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="El correo ya está registrado")
+        return {"mensaje": f"Solicitud enviada como {rol_inicial}"}
+    except:
+        raise HTTPException(status_code=400, detail="El correo ya existe")
 
 @app.post("/login")
 async def login(user: Usuario):
@@ -74,12 +71,13 @@ async def login(user: Usuario):
     conn.close()
     if res and pwd_context.verify(user.password, res[0]):
         return {"mensaje": "ok", "rol": res[1], "email": res[2]}
-    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
+    raise HTTPException(status_code=400, detail="Error")
 
 @app.get("/admin/usuarios")
 async def listar_usuarios():
     conn = get_conn()
     cursor = conn.cursor()
+    # Obtenemos todos los que no son admin
     cursor.execute("SELECT id, email, rol FROM usuarios WHERE rol != 'admin' ORDER BY id DESC")
     res = cursor.fetchall()
     conn.close()
