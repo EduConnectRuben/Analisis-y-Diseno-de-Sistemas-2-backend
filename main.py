@@ -55,6 +55,15 @@ def startup():
     conn.commit()
     conn.close()
 
+@app.get("/setup_tables")
+def setup_tables():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha TEXT, fiscal TEXT);")
+    conn.commit()
+    conn.close()
+    return {"ok": True, "msg": "Tablas creadas correctamente. Ya puedes procesar citaciones."}
+
 @app.post("/login")
 async def login(u: Usuario):
     conn = get_conn()
