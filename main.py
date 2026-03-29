@@ -37,30 +37,23 @@ def get_conn():
 def startup():
     conn = get_conn()
     cursor = conn.cursor()
-    # 1. Crear tablas
     cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, rol TEXT DEFAULT 'pendiente');")
     cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha_reg TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
     
-    # 2. CREACIÓN AUTOMÁTICA DE LAS 3 CUENTAS MAESTRAS
+    # CREAR LAS 3 CUENTAS AUTOMATICAMENTE
     cuentas = [
         ("admin@gmail.com", "12345", "admin"),
         ("policia@gmail.com", "12345", "policia"),
         ("fiscal@gmail.com", "12345", "fiscal")
     ]
-    
     for email, password, rol in cuentas:
-        cursor.execute("SELECT id FROM usuarios WHERE email = %s", (email,))
+        cursor.execute("SELECT id FROM usuarios WHERE email=%s", (email,))
         if not cursor.fetchone():
             hashed = pwd_context.hash(password)
             cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", (email, hashed, rol))
-            print(f"Cuenta creada: {email}")
-    
     conn.commit()
     conn.close()
-
-@app.get("/")
-def home(): return {"mensaje": "SISTEMA PD-8 LISTO"}
 
 @app.post("/login")
 async def login(user: Usuario):
@@ -71,7 +64,7 @@ async def login(user: Usuario):
     conn.close()
     if res and pwd_context.verify(user.password, res[0]):
         return {"rol": res[1], "email": res[2]}
-    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
+    raise HTTPException(status_code=400, detail="Error")
 
 @app.post("/registro")
 async def registro(user: Usuario):
@@ -83,8 +76,7 @@ async def registro(user: Usuario):
         conn.commit()
         conn.close()
         return {"mensaje": "Solicitud enviada"}
-    except:
-        raise HTTPException(status_code=400, detail="El correo ya existe")
+    except: raise HTTPException(status_code=400)
 
 @app.get("/admin/usuarios")
 async def listar_usuarios():
@@ -102,7 +94,7 @@ async def asignar_rol(data: RolUpdate):
     cursor.execute("UPDATE usuarios SET rol=%s WHERE id=%s", (data.nuevo_rol, data.user_id))
     conn.commit()
     conn.close()
-    return {"mensaje": "ok"}
+    return {"ok": True}
 
 @app.post("/denuncias")
 async def crear_denuncia(d: Denuncia):
@@ -111,7 +103,7 @@ async def crear_denuncia(d: Denuncia):
     cursor.execute("INSERT INTO denuncias (nombre, ci, descripcion) VALUES (%s, %s, %s)", (d.nombre, d.ci, d.descripcion))
     conn.commit()
     conn.close()
-    return {"mensaje": "ok"}
+    return {"ok": True}
 
 @app.get("/denuncias")
 async def listar_denuncias():
