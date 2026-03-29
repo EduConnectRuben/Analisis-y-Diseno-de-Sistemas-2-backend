@@ -44,7 +44,7 @@ def startup():
     conn.close()
 
 @app.get("/")
-def home(): return {"mensaje": "SISTEMA PD-8 ONLINE"}
+def home(): return {"status": "SISTEMA ACTIVO"}
 
 @app.post("/registro")
 async def registro(user: Usuario):
@@ -52,15 +52,13 @@ async def registro(user: Usuario):
         conn = get_conn()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM usuarios")
-        count = cursor.fetchone()[0]
-        # El primero es Admin, los demas pendientes
-        rol_inicial = "admin" if count == 0 else "pendiente"
+        es_el_primero = cursor.fetchone()[0] == 0
+        rol = "admin" if es_el_primero else "pendiente"
         hashed = pwd_context.hash(user.password)
-        cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", 
-                       (user.email.lower().strip(), hashed, rol_inicial))
+        cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", (user.email.lower().strip(), hashed, rol))
         conn.commit()
         conn.close()
-        return {"mensaje": f"Registrado como {rol_inicial}"}
+        return {"mensaje": "Registrado correctamente"}
     except:
         raise HTTPException(status_code=400, detail="El correo ya existe")
 
@@ -72,14 +70,13 @@ async def login(user: Usuario):
     res = cursor.fetchone()
     conn.close()
     if res and pwd_context.verify(user.password, res[0]):
-        return {"mensaje": "ok", "rol": res[1], "email": res[2]}
+        return {"rol": res[1], "email": res[2]}
     raise HTTPException(status_code=400, detail="Error")
 
 @app.get("/admin/usuarios")
 async def listar_usuarios():
     conn = get_conn()
     cursor = conn.cursor()
-    # Trae a todos los usuarios registrados excepto al admin actual
     cursor.execute("SELECT id, email, rol FROM usuarios WHERE rol != 'admin' ORDER BY id DESC")
     res = cursor.fetchall()
     conn.close()
