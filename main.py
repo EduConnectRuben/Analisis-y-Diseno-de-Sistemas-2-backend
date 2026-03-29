@@ -37,7 +37,11 @@ def get_conn():
 def startup():
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, rol TEXT DEFAULT 'pendiente');")
+    # Crear tablas
+    cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT);")
+    # 🔥 ESTA LÍNEA ARREGLA TU TABLA SI YA EXISTÍA
+    cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
+    
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha_reg TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
     conn.commit()
     conn.close()
@@ -52,13 +56,14 @@ async def registro(user: Usuario):
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM usuarios")
         count = cursor.fetchone()[0]
+        # El primerito de todos será admin
         rol_inicial = "admin" if count == 0 else "pendiente"
         hashed = pwd_context.hash(user.password)
         cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", 
                        (user.email.lower().strip(), hashed, rol_inicial))
         conn.commit()
         conn.close()
-        return {"mensaje": f"Solicitud enviada como {rol_inicial}"}
+        return {"mensaje": f"Registrado. Su rol es: {rol_inicial}"}
     except:
         raise HTTPException(status_code=400, detail="El correo ya existe")
 
@@ -71,13 +76,13 @@ async def login(user: Usuario):
     conn.close()
     if res and pwd_context.verify(user.password, res[0]):
         return {"mensaje": "ok", "rol": res[1], "email": res[2]}
-    raise HTTPException(status_code=400, detail="Error")
+    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
 
 @app.get("/admin/usuarios")
 async def listar_usuarios():
     conn = get_conn()
     cursor = conn.cursor()
-    # Obtenemos todos los que no son admin
+    # Traemos a todos menos a los administradores
     cursor.execute("SELECT id, email, rol FROM usuarios WHERE rol != 'admin' ORDER BY id DESC")
     res = cursor.fetchall()
     conn.close()
@@ -90,7 +95,7 @@ async def asignar_rol(data: RolUpdate):
     cursor.execute("UPDATE usuarios SET rol=%s WHERE id=%s", (data.nuevo_rol, data.user_id))
     conn.commit()
     conn.close()
-    return {"mensaje": "Cargo asignado"}
+    return {"mensaje": "ok"}
 
 @app.post("/denuncias")
 async def crear_denuncia(d: Denuncia):
