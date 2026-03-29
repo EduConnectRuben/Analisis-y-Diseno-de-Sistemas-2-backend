@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Permisos CORS para conectar Netlify con Render
+# Configuración de CORS para permitir conexión desde Netlify
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,12 +15,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔗 URL DE TU BASE DE DATOS REAL
+# URL DE TU BASE DE DATOS REAL
 DATABASE_URL = "postgresql://pd8_db_user:9LmN3qxtlJC969WX8yeUq7BRmkgr68sV@dpg-d73srcua2pns73acu8qg-a.oregon-postgres.render.com/pd8_db"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# --- MODELOS ---
+# --- MODELOS DE DATOS ---
 class Usuario(BaseModel):
     email: str
     password: str
@@ -73,9 +73,10 @@ async def registro(user: Usuario):
 
 @app.post("/login")
 async def login(user: Usuario):
+    email_limpio = user.email.lower().strip()
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT password FROM usuarios WHERE email=%s", (user.email.lower().strip(),))
+    cursor.execute("SELECT password FROM usuarios WHERE email=%s", (email_limpio,))
     res = cursor.fetchone()
     conn.close()
     if res and pwd_context.verify(user.password, res[0]):
