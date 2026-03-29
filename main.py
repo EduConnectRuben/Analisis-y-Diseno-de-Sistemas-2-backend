@@ -37,34 +37,30 @@ def get_conn():
 def startup():
     conn = get_conn()
     cursor = conn.cursor()
+    # 1. Crear tablas
     cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, rol TEXT DEFAULT 'pendiente');")
-    # Asegurar columna rol por si la tabla es vieja
     cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha_reg TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
+    
+    # 2. CREACIÓN AUTOMÁTICA DE LAS 3 CUENTAS MAESTRAS
+    cuentas = [
+        ("admin@gmail.com", "12345", "admin"),
+        ("policia@gmail.com", "12345", "policia"),
+        ("fiscal@gmail.com", "12345", "fiscal")
+    ]
+    
+    for email, password, rol in cuentas:
+        cursor.execute("SELECT id FROM usuarios WHERE email = %s", (email,))
+        if not cursor.fetchone():
+            hashed = pwd_context.hash(password)
+            cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", (email, hashed, rol))
+            print(f"Cuenta creada: {email}")
+    
     conn.commit()
     conn.close()
 
 @app.get("/")
-def home(): return {"mensaje": "SISTEMA PD-8 ONLINE"}
-
-@app.post("/registro")
-async def registro(user: Usuario):
-    try:
-        conn = get_conn()
-        cursor = conn.cursor()
-        # Verificar si es el primer usuario
-        cursor.execute("SELECT COUNT(*) FROM usuarios")
-        es_primero = cursor.fetchone()[0] == 0
-        rol_asignado = "admin" if es_primero else "pendiente"
-        
-        hashed = pwd_context.hash(user.password)
-        cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", 
-                       (user.email.lower().strip(), hashed, rol_asignado))
-        conn.commit()
-        conn.close()
-        return {"mensaje": f"Registrado como {rol_asignado}"}
-    except:
-        raise HTTPException(status_code=400, detail="Error: El usuario ya existe")
+def home(): return {"mensaje": "SISTEMA PD-8 LISTO"}
 
 @app.post("/login")
 async def login(user: Usuario):
@@ -75,7 +71,20 @@ async def login(user: Usuario):
     conn.close()
     if res and pwd_context.verify(user.password, res[0]):
         return {"rol": res[1], "email": res[2]}
-    raise HTTPException(status_code=400, detail="Clave incorrecta")
+    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
+
+@app.post("/registro")
+async def registro(user: Usuario):
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        hashed = pwd_context.hash(user.password)
+        cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, 'pendiente')", (user.email.lower().strip(), hashed))
+        conn.commit()
+        conn.close()
+        return {"mensaje": "Solicitud enviada"}
+    except:
+        raise HTTPException(status_code=400, detail="El correo ya existe")
 
 @app.get("/admin/usuarios")
 async def listar_usuarios():
