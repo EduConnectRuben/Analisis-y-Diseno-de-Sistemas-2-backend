@@ -4,6 +4,7 @@ import psycopg2
 from passlib.context import CryptContext
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+from typing import Optional
 
 app = FastAPI()
 
@@ -18,7 +19,7 @@ app.add_middleware(
 DATABASE_URL = "postgresql://pd8_db_user:9LmN3qxtlJC969WX8yeUq7BRmkgr68sV@dpg-d73srcua2pns73acu8qg-a.oregon-postgres.render.com/pd8_db"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# MODELOS
+# --- MODELOS ---
 class Usuario(BaseModel):
     email: str
     password: str
@@ -30,8 +31,8 @@ class Denuncia(BaseModel):
 
 class Citacion(BaseModel):
     denuncia_id: int
-    num_cita: str
-    fecha: str
+    nivel: str
+    fecha_cita: str
     fiscal: str
 
 def get_conn():
@@ -41,12 +42,23 @@ def get_conn():
 def startup():
     conn = get_conn()
     cursor = conn.cursor()
+    # Usuarios
     cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, rol TEXT DEFAULT 'pendiente');")
-    cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
+    # Denuncias
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, num_cita TEXT, fecha TEXT, fiscal TEXT);")
+    # Citaciones (Historial)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS citaciones (
+            id SERIAL PRIMARY KEY, 
+            denuncia_id INTEGER REFERENCES denuncias(id), 
+            nivel TEXT, 
+            fecha_cita TEXT, 
+            fiscal TEXT, 
+            fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
     
-    # CUENTAS MAESTRAS
+    # Cuentas maestras obligatorias
     cuentas = [("admin@gmail.com", "admin"), ("policia@gmail.com", "policia"), ("fiscal@gmail.com", "fiscal")]
     for em, rl in cuentas:
         cursor.execute("SELECT id FROM usuarios WHERE email=%s", (em,))
@@ -55,6 +67,18 @@ def startup():
             cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", (em, h, rl))
     conn.commit()
     conn.close()
+
+@app.post("/registro")
+async def registro(u: Usuario):
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        h = pwd_context.hash(u.password)
+        cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, 'pendiente')", (u.email.lower().strip(), h))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except: raise HTTPException(status_code=400, detail="Usuario ya existe")
 
 @app.post("/login")
 async def login(u: Usuario):
@@ -67,32 +91,11 @@ async def login(u: Usuario):
         return {"rol": res[1], "email": res[2]}
     raise HTTPException(status_code=400)
 
-@app.post("/denuncias")
-async def guardar_denuncia(d: Denuncia):
-    try:
-        conn = get_conn()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO denuncias (nombre, ci, descripcion) VALUES (%s, %s, %s)", (d.nombre, d.ci, d.descripcion))
-        conn.commit()
-        conn.close()
-        return {"status": "ok"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/denuncias")
-async def listar():
-    conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, nombre, ci, descripcion FROM denuncias ORDER BY id DESC")
-    res = cursor.fetchall()
-    conn.close()
-    return res
-
 @app.get("/admin/usuarios")
 async def admin_list():
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, email, rol FROM usuarios WHERE rol != 'admin'")
+    cursor.execute("SELECT id, email, rol FROM usuarios WHERE rol != 'admin' ORDER BY id DESC")
     res = cursor.fetchall()
     conn.close()
     return res
@@ -105,3 +108,41 @@ async def asignar(user_id: int, rol: str):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+@app.post("/denuncias")
+async def guardar_denuncia(d: Denuncia):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO denuncias (nombre, ci, descripcion) VALUES (%s, %s, %s) RETURNING id", (d.nombre, d.ci, d.descripcion))
+    id_generado = cursor.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return {"id": id_generado}
+
+@app.get("/denuncias")
+async def listar_denuncias():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nombre, ci, descripcion, fecha FROM denuncias ORDER BY id DESC")
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+@app.post("/citaciones")
+async def guardar_citacion(c: Citacion):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO citaciones (denuncia_id, nivel, fecha_cita, fiscal) VALUES (%s, %s, %s, %s)", 
+                   (c.denuncia_id, c.nivel, c.fecha_cita, c.fiscal))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.get("/citaciones/{denuncia_id}")
+async def historial_citaciones(denuncia_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT nivel, fecha_cita, fiscal, fecha_registro FROM citaciones WHERE denuncia_id=%s ORDER BY id ASC", (denuncia_id,))
+    res = cursor.fetchall()
+    conn.close()
+    return res
