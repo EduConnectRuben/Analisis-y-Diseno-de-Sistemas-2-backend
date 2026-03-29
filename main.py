@@ -26,6 +26,10 @@ class Denuncia(BaseModel):
     ci: str
     descripcion: str
 
+class EstadoUpdate(BaseModel):
+    denuncia_id: int
+    estado: str
+
 class Citacion(BaseModel):
     denuncia_id: int
     nivel: str
@@ -42,8 +46,11 @@ def startup():
     # Tablas Pro
     cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, rol TEXT DEFAULT 'pendiente');")
     cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
-    cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP, estado TEXT DEFAULT 'activo');")
+    cursor.execute("ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'activo';")
     cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha TEXT, fiscal TEXT);")
+    cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS nivel TEXT;")
+    cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS fecha TEXT;")
     cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS fiscal TEXT;")
     
     # Cuentas Maestras (Pass: 12345)
@@ -65,10 +72,13 @@ def setup_tables():
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha TEXT, fiscal TEXT);")
+    cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS nivel TEXT;")
+    cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS fecha TEXT;")
     cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS fiscal TEXT;")
+    cursor.execute("ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS estado TEXT DEFAULT 'activo';")
     conn.commit()
     conn.close()
-    return {"ok": True, "msg": "Tablas creadas correctamente. Ya puedes procesar citaciones."}
+    return {"ok": True, "msg": "Tablas creadas y parchadas correctamente. Ya puedes procesar citaciones."}
 
 @app.post("/login")
 async def login(u: Usuario):
@@ -86,12 +96,19 @@ async def registro(u: Usuario):
     try:
         conn = get_conn()
         cursor = conn.cursor()
+        
+        # Validar si correo ya existe
+        cursor.execute("SELECT id FROM usuarios WHERE email=%s", (u.email.lower().strip(),))
+        if cursor.fetchone():
+            return {"ok": False, "error": "correo_existe"}
+            
         h = pwd_context.hash(u.password)
         cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, 'pendiente')", (u.email.lower().strip(), h))
         conn.commit()
         conn.close()
         return {"ok": True}
-    except: raise HTTPException(status_code=400)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @app.get("/admin/usuarios")
 async def admin_list():
@@ -128,7 +145,8 @@ async def listar_denuncias():
     cursor.execute("""
         SELECT d.id, d.nombre, d.ci, d.descripcion, 
                (SELECT COUNT(*) FROM citaciones c WHERE c.denuncia_id = d.id) as num_citaciones,
-               (SELECT fecha FROM citaciones c WHERE c.denuncia_id = d.id ORDER BY id DESC LIMIT 1) as ultima_fecha
+               (SELECT fecha FROM citaciones c WHERE c.denuncia_id = d.id ORDER BY id DESC LIMIT 1) as ultima_fecha,
+               d.estado
         FROM denuncias d ORDER BY d.id DESC
     """)
     res = cursor.fetchall()
@@ -146,6 +164,18 @@ async def guardar_citacion(c: Citacion):
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+@app.post("/denuncias/estado")
+async def cambiar_estado(e: EstadoUpdate):
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE denuncias SET estado=%s WHERE id=%s", (e.estado, e.denuncia_id))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 @app.get("/citaciones/{denuncia_id}")
 async def listar_citaciones_x_denuncia(denuncia_id: int):
