@@ -110,7 +110,30 @@ async def guardar_denuncia(d: Denuncia):
 async def listar_denuncias():
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, nombre, ci, descripcion FROM denuncias ORDER BY id DESC")
+    cursor.execute("""
+        SELECT d.id, d.nombre, d.ci, d.descripcion, 
+               (SELECT COUNT(*) FROM citaciones c WHERE c.denuncia_id = d.id) as num_citaciones,
+               (SELECT fecha FROM citaciones c WHERE c.denuncia_id = d.id ORDER BY id DESC LIMIT 1) as ultima_fecha
+        FROM denuncias d ORDER BY d.id DESC
+    """)
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+@app.post("/citaciones")
+async def guardar_citacion(c: Citacion):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO citaciones (denuncia_id, nivel, fecha, fiscal) VALUES (%s, %s, %s, %s)", (c.denuncia_id, c.nivel, c.fecha, c.fiscal))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.get("/citaciones/{denuncia_id}")
+async def listar_citaciones_x_denuncia(denuncia_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nivel, fecha, fiscal FROM citaciones WHERE denuncia_id = %s ORDER BY id ASC", (denuncia_id,))
     res = cursor.fetchall()
     conn.close()
     return res
