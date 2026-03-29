@@ -44,6 +44,7 @@ def startup():
     cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
     cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha TEXT, fiscal TEXT);")
+    cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS fiscal TEXT;")
     
     # Cuentas Maestras (Pass: 12345)
     cuentas = [("admin@gmail.com", "admin"), ("policia@gmail.com", "policia"), ("fiscal@gmail.com", "fiscal")]
@@ -64,6 +65,7 @@ def setup_tables():
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, nivel TEXT, fecha TEXT, fiscal TEXT);")
+    cursor.execute("ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS fiscal TEXT;")
     conn.commit()
     conn.close()
     return {"ok": True, "msg": "Tablas creadas correctamente. Ya puedes procesar citaciones."}
@@ -135,12 +137,15 @@ async def listar_denuncias():
 
 @app.post("/citaciones")
 async def guardar_citacion(c: Citacion):
-    conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO citaciones (denuncia_id, nivel, fecha, fiscal) VALUES (%s, %s, %s, %s)", (c.denuncia_id, c.nivel, c.fecha, c.fiscal))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO citaciones (denuncia_id, nivel, fecha, fiscal) VALUES (%s, %s, %s, %s)", (c.denuncia_id, c.nivel, c.fecha, c.fiscal))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @app.get("/citaciones/{denuncia_id}")
 async def listar_citaciones_x_denuncia(denuncia_id: int):
