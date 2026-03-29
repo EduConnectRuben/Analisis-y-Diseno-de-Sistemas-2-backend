@@ -41,7 +41,7 @@ def startup():
     cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol TEXT DEFAULT 'pendiente';")
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha_reg TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
     
-    # CREAR LAS 3 CUENTAS AUTOMATICAMENTE
+    # CUENTAS MAESTRAS
     cuentas = [
         ("admin@gmail.com", "12345", "admin"),
         ("policia@gmail.com", "12345", "policia"),
@@ -64,7 +64,7 @@ async def login(user: Usuario):
     conn.close()
     if res and pwd_context.verify(user.password, res[0]):
         return {"rol": res[1], "email": res[2]}
-    raise HTTPException(status_code=400, detail="Error")
+    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
 
 @app.post("/registro")
 async def registro(user: Usuario):
@@ -75,8 +75,8 @@ async def registro(user: Usuario):
         cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, 'pendiente')", (user.email.lower().strip(), hashed))
         conn.commit()
         conn.close()
-        return {"mensaje": "Solicitud enviada"}
-    except: raise HTTPException(status_code=400)
+        return {"mensaje": "Solicitud enviada al Administrador"}
+    except: raise HTTPException(status_code=400, detail="El correo ya existe")
 
 @app.get("/admin/usuarios")
 async def listar_usuarios():
