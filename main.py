@@ -21,15 +21,14 @@ class Usuario(BaseModel):
     email: str
     password: str
 
+class RolUpdate(BaseModel):
+    user_id: int
+    nuevo_rol: str
+
 class Denuncia(BaseModel):
     nombre: str
     ci: str
     descripcion: str
-
-class Citacion(BaseModel):
-    denuncia_id: int
-    fecha: str
-    fiscal: str
 
 def get_conn():
     return psycopg2.connect(DATABASE_URL)
@@ -38,36 +37,62 @@ def get_conn():
 def startup():
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, email TEXT UNIQUE, password TEXT, rol TEXT DEFAULT 'pendiente');")
     cursor.execute("CREATE TABLE IF NOT EXISTS denuncias (id SERIAL PRIMARY KEY, nombre TEXT, ci TEXT, descripcion TEXT, fecha_reg TIMESTAMP DEFAULT CURRENT_TIMESTAMP);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS citaciones (id SERIAL PRIMARY KEY, denuncia_id INTEGER, fecha_cita TEXT, fiscal_nombre TEXT);")
     conn.commit()
     conn.close()
 
 @app.get("/")
-def home(): return {"status": "SISTEMA PD-8 ONLINE"}
+def home(): return {"mensaje": "SISTEMA PD-8 ONLINE"}
 
 @app.post("/registro")
 async def registro(user: Usuario):
     try:
         conn = get_conn()
         cursor = conn.cursor()
+        
+        # TRUCO: Si es el primer usuario, hacerlo ADMIN automáticamente
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        count = cursor.fetchone()[0]
+        rol_inicial = "admin" if count == 0 else "pendiente"
+        
         hashed = pwd_context.hash(user.password)
-        cursor.execute("INSERT INTO usuarios (email, password) VALUES (%s, %s)", (user.email.lower().strip(), hashed))
+        cursor.execute("INSERT INTO usuarios (email, password, rol) VALUES (%s, %s, %s)", 
+                       (user.email.lower().strip(), hashed, rol_inicial))
         conn.commit()
         conn.close()
-        return {"mensaje": "ok"}
-    except: raise HTTPException(status_code=400, detail="Usuario ya existe")
+        return {"mensaje": f"Usuario registrado como {rol_inicial}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="El correo ya está registrado")
 
 @app.post("/login")
 async def login(user: Usuario):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT password FROM usuarios WHERE email=%s", (user.email.lower().strip(),))
+    cursor.execute("SELECT password, rol, email FROM usuarios WHERE email=%s", (user.email.lower().strip(),))
     res = cursor.fetchone()
     conn.close()
-    if res and pwd_context.verify(user.password, res[0]): return {"mensaje": "ok"}
-    raise HTTPException(status_code=400, detail="Error")
+    if res and pwd_context.verify(user.password, res[0]):
+        return {"mensaje": "ok", "rol": res[1], "email": res[2]}
+    raise HTTPException(status_code=400, detail="Credenciales incorrectas")
+
+@app.get("/admin/usuarios")
+async def listar_usuarios():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, email, rol FROM usuarios WHERE rol != 'admin' ORDER BY id DESC")
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+@app.post("/admin/asignar_rol")
+async def asignar_rol(data: RolUpdate):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE usuarios SET rol=%s WHERE id=%s", (data.nuevo_rol, data.user_id))
+    conn.commit()
+    conn.close()
+    return {"mensaje": "Cargo asignado"}
 
 @app.post("/denuncias")
 async def crear_denuncia(d: Denuncia):
@@ -86,12 +111,3 @@ async def listar_denuncias():
     res = cursor.fetchall()
     conn.close()
     return res
-
-@app.post("/citaciones")
-async def crear_citacion(c: Citacion):
-    conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO citaciones (denuncia_id, fecha_cita, fiscal_nombre) VALUES (%s, %s, %s)", (c.denuncia_id, c.fecha, c.fiscal))
-    conn.commit()
-    conn.close()
-    return {"mensaje": "ok"}
